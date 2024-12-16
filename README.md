@@ -1,6 +1,6 @@
 # Spring Boot Ticket System
 
-A robust ticket management system built with Spring Boot that handles support tickets, nested replies, and provides comprehensive ticket tracking functionality.
+A ticket management system built with Spring Boot that handles support tickets, nested replies, and provides ticket tracking functionality.
 
 ## Features
 
@@ -145,14 +145,6 @@ Use the provided curl commands in `test-commands.md` to test individual endpoint
     "lastEditedAt": "date"
 }
 ```
-
-## Contributing
-
-1. Fork the repository
-2. Create your feature branch (`git checkout -b feature/AmazingFeature`)
-3. Commit your changes (`git commit -m 'Add some AmazingFeature'`)
-4. Push to the branch (`git push origin feature/AmazingFeature`)
-5. Open a Pull Request
 
 ## License
 
