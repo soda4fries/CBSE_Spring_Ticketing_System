@@ -5,6 +5,7 @@ $Green = [System.ConsoleColor]::Green
 $Red = [System.ConsoleColor]::Red
 $Blue = [System.ConsoleColor]::Blue
 $White = [System.ConsoleColor]::White
+$Yellow = [System.ConsoleColor]::Yellow
 
 # Base URL
 $BaseUrl = "http://localhost:8080/api/tickets"
@@ -12,22 +13,43 @@ $BaseUrl = "http://localhost:8080/api/tickets"
 # Test counter
 $TestsPassed = 0
 $TestsFailed = 0
+$TestResults = @()
 
-# Function to print test results
+# Function to print test results with detailed response
 function Write-TestResult {
     param (
         [string]$TestName,
         [bool]$Success,
-        [string]$Response
+        [object]$Response
     )
-    
+
     if ($Success) {
-        Write-Host "✓ $TestName passed" -ForegroundColor $Green
         $script:TestsPassed++
+        Write-Host "`n✓ $TestName passed" -ForegroundColor $Green
+        
+        # Print response details
+        Write-Host "Response Details:" -ForegroundColor $Blue
+        Write-Host "  Operation: $($Response.operation)" -ForegroundColor $White
+        Write-Host "  Message: $($Response.message)" -ForegroundColor $White
+        Write-Host "  Success: $($Response.success)" -ForegroundColor $White
+        Write-Host "  Timestamp: $([DateTime]::FromFileTime($Response.timestamp))" -ForegroundColor $White
+        
+        if ($Response.data) {
+            Write-Host "  Data:" -ForegroundColor $Yellow
+            $Response.data | Format-List | Out-String | ForEach-Object { Write-Host "    $_" -ForegroundColor $White }
+        }
     } else {
-        Write-Host "✗ $TestName failed" -ForegroundColor $Red
-        Write-Host "Response: $Response" -ForegroundColor $Red
         $script:TestsFailed++
+        Write-Host "`n✗ $TestName failed" -ForegroundColor $Red
+        Write-Host "Error Details:" -ForegroundColor $Red
+        Write-Host "  $Response" -ForegroundColor $White
+    }
+
+    $TestResults += [PSCustomObject]@{
+        TestName = $TestName
+        Success = $Success
+        Response = $Response
+        Timestamp = Get-Date
     }
 }
 
@@ -39,7 +61,7 @@ function Invoke-TicketRequest {
         [string]$Body,
         [hashtable]$Headers = @{"Content-Type" = "application/json"}
     )
-    
+
     try {
         if ($Body) {
             $response = Invoke-RestMethod -Uri $Uri -Method $Method -Body $Body -Headers $Headers -ErrorAction Stop
@@ -53,18 +75,20 @@ function Invoke-TicketRequest {
     } catch {
         return @{
             Success = $false
-            Response = $_.Exception.Message
+            Response = "$($_.Exception.Message)`nStatusCode: $($_.Exception.Response.StatusCode.value__)`nStatusDescription: $($_.Exception.Response.StatusDescription)"
         }
     }
 }
 
 Write-Host "Starting Ticket System API Tests..." -ForegroundColor $Blue
-Write-Host
+Write-Host "$(Get-Date)" -ForegroundColor $White
+Write-Host "Base URL: $BaseUrl" -ForegroundColor $White
+Write-Host "------------------------------------------" -ForegroundColor $Blue
 
 # Test 1: Create a ticket
-Write-Host "Test 1: Creating a ticket..."
+Write-Host "`nTest 1: Creating a ticket..."
 $createResult = Invoke-TicketRequest -Uri "$BaseUrl`?title=Test%20Ticket&description=Test%20Description" -Method "POST"
-$ticketId = $createResult.Response.id
+$ticketId = $createResult.Response.data.id
 Write-TestResult -TestName "Create Ticket" -Success $createResult.Success -Response $createResult.Response
 
 # Test 2: Get the created ticket
@@ -78,6 +102,7 @@ $updateBody = @{
     id = $ticketId
     title = "Updated Ticket"
     description = "Updated Description"
+    status = "OPEN"
 } | ConvertTo-Json
 $updateResult = Invoke-TicketRequest -Uri "$BaseUrl/$ticketId" -Method "PUT" -Body $updateBody
 Write-TestResult -TestName "Update Ticket" -Success $updateResult.Success -Response $updateResult.Response
@@ -90,7 +115,7 @@ Write-TestResult -TestName "Assign Ticket" -Success $assignResult.Success -Respo
 # Test 5: Add a reply
 Write-Host "`nTest 5: Adding a reply..."
 $replyResult = Invoke-TicketRequest -Uri "$BaseUrl/$ticketId/replies?content=Test%20Reply" -Method "POST"
-$replyId = $replyResult.Response.id
+$replyId = $replyResult.Response.data.id
 Write-TestResult -TestName "Add Reply" -Success $replyResult.Success -Response $replyResult.Response
 
 # Test 6: Add a nested reply
@@ -153,15 +178,36 @@ Write-Host "`nTest 17: Resolving the ticket..."
 $resolveResult = Invoke-TicketRequest -Uri "$BaseUrl/$ticketId/resolve" -Method "PUT"
 Write-TestResult -TestName "Resolve Ticket" -Success $resolveResult.Success -Response $resolveResult.Response
 
-# Print final summary
-Write-Host "`nTest Summary:" -ForegroundColor $Blue
+# Print final summary with more details
+Write-Host "`n===========================================" -ForegroundColor $Blue
+Write-Host "Test Summary:" -ForegroundColor $Blue
 Write-Host "Tests Passed: $TestsPassed" -ForegroundColor $Green
 Write-Host "Tests Failed: $TestsFailed" -ForegroundColor $Red
 Write-Host "Total Tests: $($TestsPassed + $TestsFailed)" -ForegroundColor $White
+Write-Host "===========================================" -ForegroundColor $Blue
+
+Write-Host "`nDetailed Results:" -ForegroundColor $Blue
+$TestResults | ForEach-Object {
+    $color = if ($_.Success) { $Green } else { $Red }
+    Write-Host "`nTest: $($_.TestName)" -ForegroundColor $color
+    Write-Host "Status: $(if ($_.Success) { 'PASSED' } else { 'FAILED' })" -ForegroundColor $color
+    Write-Host "Time: $($_.Timestamp)" -ForegroundColor $White
+    
+    if (-not $_.Success) {
+        Write-Host "Error Details:" -ForegroundColor $Red
+        Write-Host $_.Response -ForegroundColor $White
+    } elseif ($_.Response.data) {
+        Write-Host "Response Data:" -ForegroundColor $Yellow
+        $_.Response.data | Format-List | Out-String | ForEach-Object { Write-Host $_ -ForegroundColor $White }
+    }
+}
+
 
 # Exit with status code based on test results
 if ($TestsFailed -eq 0) {
+    Write-Host "`nAll tests passed successfully!" -ForegroundColor $Green
     exit 0
 } else {
+    Write-Host "`nSome tests failed. Check the detailed results above." -ForegroundColor $Red
     exit 1
 }

@@ -22,7 +22,7 @@ public class TicketServiceImpl implements TicketService {
         ticket.setId(UUID.randomUUID().toString());
         ticket.setTitle(title != null ? title : "");
         ticket.setDescription(description != null ? description : "");
-        ticket.setStatus("OPEN");  // Ensure status is never null
+        ticket.setStatus("OPEN");
         
         Date now = new Date();
         ticket.setCreatedAt(now);
@@ -49,7 +49,7 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public void updateTicket(Ticket ticket) {
+    public Ticket updateTicket(Ticket ticket) {
         if (!tickets.containsKey(ticket.getId())) {
             throw new IllegalArgumentException("Ticket not found: " + ticket.getId());
         }
@@ -64,10 +64,11 @@ public class TicketServiceImpl implements TicketService {
         
         ticket.setLastUpdatedAt(new Date());
         tickets.put(ticket.getId(), ticket);
+        return ticket;
     }
 
     @Override
-    public void assignTicket(String ticketId, String userId) {
+    public Ticket assignTicket(String ticketId, String userId) {
         Ticket ticket = tickets.get(ticketId);
         if (ticket == null) {
             throw new IllegalArgumentException("Ticket not found: " + ticketId);
@@ -75,6 +76,7 @@ public class TicketServiceImpl implements TicketService {
         ticket.setAssignedTo(userId);
         ticket.setLastUpdatedAt(new Date());
         tickets.put(ticketId, ticket);
+        return ticket;
     }
 
     @Override
@@ -102,7 +104,7 @@ public class TicketServiceImpl implements TicketService {
     }
 
     @Override
-    public void editReply(String ticketId, String replyId, String newContent) {
+    public Reply editReply(String ticketId, String replyId, String newContent) {
         List<Reply> ticketReplies = replies.get(ticketId);
         if (ticketReplies == null) {
             throw new IllegalArgumentException("Ticket not found: " + ticketId);
@@ -112,14 +114,14 @@ public class TicketServiceImpl implements TicketService {
             if (reply.getId().equals(replyId)) {
                 reply.setContent(newContent);
                 reply.setLastEditedAt(new Date());
-                return;
+                return reply;
             }
         }
         throw new IllegalArgumentException("Reply not found: " + replyId);
     }
 
     @Override
-    public void resolveTicket(String ticketId) {
+    public Ticket resolveTicket(String ticketId) {
         Ticket ticket = tickets.get(ticketId);
         if (ticket == null) {
             throw new IllegalArgumentException("Ticket not found: " + ticketId);
@@ -128,6 +130,7 @@ public class TicketServiceImpl implements TicketService {
         ticket.setResolvedAt(new Date());
         ticket.setLastUpdatedAt(new Date());
         tickets.put(ticketId, ticket);
+        return ticket;
     }
 
     @Override
@@ -164,8 +167,8 @@ public class TicketServiceImpl implements TicketService {
         String term = searchTerm.toLowerCase();
         return tickets.values().stream()
                 .filter(ticket ->
-                        ticket.getTitle().toLowerCase().contains(term) ||
-                                ticket.getDescription().toLowerCase().contains(term))
+                        (ticket.getTitle() != null && ticket.getTitle().toLowerCase().contains(term)) ||
+                        (ticket.getDescription() != null && ticket.getDescription().toLowerCase().contains(term)))
                 .collect(Collectors.toList());
     }
 
@@ -173,7 +176,7 @@ public class TicketServiceImpl implements TicketService {
     public List<Reply> getTicketRepliesTree(String ticketId) {
         List<Reply> allReplies = replies.get(ticketId);
         if (allReplies == null) {
-            return new ArrayList<>();
+            throw new IllegalArgumentException("Ticket not found: " + ticketId);
         }
 
         Map<String, List<Reply>> replyChildren = new HashMap<>();
@@ -205,12 +208,18 @@ public class TicketServiceImpl implements TicketService {
 
     @Override
     public Map<String, Integer> getTicketStatistics() {
-        return tickets.values().stream()
-            .filter(ticket -> ticket.getStatus() != null)  
+        Map<String, Integer> stats = tickets.values().stream()
+            .filter(ticket -> ticket.getStatus() != null)
             .collect(Collectors.groupingBy(
-                ticket -> ticket.getStatus(),
+                Ticket::getStatus,
                 Collectors.collectingAndThen(Collectors.counting(), Long::intValue)
             ));
+        
+        // Ensure all standard statuses are present
+        Arrays.asList("OPEN", "IN_PROGRESS", "RESOLVED", "CLOSED")
+            .forEach(status -> stats.putIfAbsent(status, 0));
+            
+        return stats;
     }
 
     @Override
@@ -232,8 +241,9 @@ public class TicketServiceImpl implements TicketService {
     public List<Ticket> getOverdueTickets() {
         return tickets.values().stream()
             .filter(ticket -> 
-                ticket.getCreatedAt() != null &&  // Check for null creation date
+                ticket.getCreatedAt() != null &&
                 !"RESOLVED".equals(ticket.getStatus()) &&
+                !"CLOSED".equals(ticket.getStatus()) &&
                 ticket.getCreatedAt().before(getOverdueThreshold()))
             .collect(Collectors.toList());
     }
